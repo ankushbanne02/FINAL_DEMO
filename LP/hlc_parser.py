@@ -1,7 +1,6 @@
 import re
 import json
 from collections import defaultdict
-from datetime import datetime
 
 # --- Message-type mapping ------------------------------------------
 ID_MAP = {
@@ -16,43 +15,25 @@ ID_MAP = {
 }
 
 # --- Regex helpers -------------------------------------------------
-LOG_TS = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3})')
 RAW_BODY = re.compile(r'\): (.*?)(?: \[\]$)')
-LOC_PAT = re.compile(r'\b\d{4}\.\d{4}\.\d{4}\.B\d{2}\b') 
+LOC_PAT = re.compile(r'\b\d{4}\.\d{4}\.\d{4}\.B\d{2}\b')
 
 # --- Main parser ---------------------------------------------------
 def parse_log(text: str) -> list[dict]:
-    parcels = defaultdict(lambda: {
-        "pic": None,
-        "hostId": None,
-        "barcodes": [],
-        "barcode_count": 0,
-        "location": None,
-        "destination": None,
-        "lifeCycle": {"registeredAt": None, "closedAt": None, "status": "open"},
-        "barcodeErr": False,
-        "events": [],
-        "volume_data": {
-            "length": None,
-            "width": None,
-            "height": None,
-            "box_volume": None,
-            "real_volume": None
-        }
-    })
+    parcels = {}
+    pending_registers = {}
 
     for line in text.splitlines():
-        ts_m, body_m = LOG_TS.search(line), RAW_BODY.search(line)
-        if not (ts_m and body_m):
+        body_m = RAW_BODY.search(line)
+        if not body_m:
             continue
-
-        ts_iso = datetime.strptime(
-            f"{ts_m.group(1)}.{ts_m.group(2)}", "%Y-%m-%d %H:%M:%S.%f"
-        ).isoformat()
 
         parts = body_m.group(1).strip().split("|")
         if len(parts) < 6 or ID_MAP.get(parts[3], "").startswith("Watchdog"):
             continue
+
+        msg_code = parts[3]
+        msg = ID_MAP.get(msg_code, f"Type{msg_code}")
 
         try:
             pic = int(parts[4])
@@ -60,30 +41,79 @@ def parse_log(text: str) -> list[dict]:
             continue
 
         host_id = parts[5].strip()
-        if not host_id:
+
+        # Extract timestamp from the message body (parts[2]), ensure ms format
+        try:
+            raw_ts = parts[2]  # Example: 2025-05-13T07:46:40.306Z
+            ts_clean = raw_ts.split("T")[1].replace("Z", "")  # => "07:46:40.306"
+            iso_ts = f"2025-05-13T{ts_clean}"
+        except:
             continue
 
-        parcel = parcels[host_id]
-        parcel["pic"] = pic
-        parcel["hostId"] = host_id
+        # Handle ItemRegister (with or without hostId)
+        if msg == "ItemRegister":
+            if host_id:
+                if host_id not in parcels:
+                    parcels[host_id] = {
+                        "pic": pic,
+                        "hostId": host_id,
+                        "barcodes": [],
+                        "barcode_count": 0,
+                        "location": None,
+                        "destination": None,
+                        "lifeCycle": {"registeredAt": iso_ts, "closedAt": None, "status": "open"},
+                        "barcodeErr": False,
+                        "events": [],
+                        "volume_data": {
+                            "length": None, "width": None, "height": None,
+                            "box_volume": None, "real_volume": None
+                        }
+                    }
+                parcels[host_id]["events"].append({
+                    "ts": iso_ts,
+                    "type": msg,
+                    "raw": "|".join(parts)
+                })
+            else:
+                pending_registers[pic] = iso_ts
+            continue
 
-        msg = ID_MAP.get(parts[3], f"Type{parts[3]}")
+        if not host_id:
+            continue  # Can't proceed without hostId in other messages
+
+        if host_id not in parcels:
+            parcels[host_id] = {
+                "pic": pic,
+                "hostId": host_id,
+                "barcodes": [],
+                "barcode_count": 0,
+                "location": None,
+                "destination": None,
+                "lifeCycle": {"registeredAt": None, "closedAt": None, "status": "open"},
+                "barcodeErr": False,
+                "events": [],
+                "volume_data": {
+                    "length": None, "width": None, "height": None,
+                    "box_volume": None, "real_volume": None
+                }
+            }
+
+        parcel = parcels[host_id]
+
+        # Register time from cached register
+        if msg == "ItemInstruction" and parcel["lifeCycle"]["registeredAt"] is None:
+            if pic in pending_registers:
+                parcel["lifeCycle"]["registeredAt"] = pending_registers[pic]
+                del pending_registers[pic]
+            else:
+                parcel["lifeCycle"]["registeredAt"] = iso_ts
 
         if not parcel["location"]:
             loc_m = LOC_PAT.search("|".join(parts))
             if loc_m:
                 parcel["location"] = loc_m.group(0)
 
-        if msg == "ItemRegister":
-            parcel["lifeCycle"]["registeredAt"] = (
-                parcel["lifeCycle"]["registeredAt"] or ts_iso
-            )
-
-        elif msg == "ItemInstruction":
-            # ✅ Set registeredAt only if not already set
-            if parcel["lifeCycle"]["registeredAt"] is None:
-                parcel["lifeCycle"]["registeredAt"] = ts_iso
-
+        if msg == "ItemInstruction":
             if len(parts) >= 7:
                 parcel["location"] = parcel["location"] or parts[6]
             if len(parts) >= 8:
@@ -134,10 +164,10 @@ def parse_log(text: str) -> list[dict]:
         elif msg == "ItemDeRegister":
             if parcel["lifeCycle"]["status"] != "sorted":
                 parcel["lifeCycle"]["status"] = "deregistered"
-            parcel["lifeCycle"]["closedAt"] = ts_iso
+            parcel["lifeCycle"]["closedAt"] = iso_ts
 
         parcel["events"].append({
-            "ts": ts_iso,
+            "ts": iso_ts,
             "type": msg,
             "raw": "|".join(parts)
         })
@@ -147,9 +177,9 @@ def parse_log(text: str) -> list[dict]:
 
     return list(parcels.values())
 
-
+# --- Run as script --------------------------------------------------
 if __name__ == "__main__":
-    input_file = "logs.txt"  # Replace with your actual log file name
+    input_file = "logs.txt"
     output_file = "parsed_output.json"
 
     with open(input_file, "r", encoding="utf-8") as f:
@@ -160,4 +190,4 @@ if __name__ == "__main__":
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(parsed_data, f, ensure_ascii=False, indent=2)
 
-    print(f"Parsed data saved to {output_file}")
+    print(f"✅ Parsed data saved to {output_file}")
