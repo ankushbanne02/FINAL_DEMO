@@ -1,0 +1,82 @@
+[
+  {
+    "pic": 1,
+    "hostId": null,
+    "barcodes": [],
+    "location": "1234.5678.0000.B01",
+    "destination": null,
+    "lifeCycle": {
+      "registeredAt": null,
+      "closedAt": null,
+      "status": "open"
+    },
+    "barcodeErr": false,
+    "events": [
+      {
+        "ts": "2025-07-19T11:45:10.123000",
+        "type": "Type2027756",
+        "raw": "|S|2|2027756|1|460|LOC1|BARCODE123|6;BCode;1234.5678.0000.B01|"
+      }
+    ]
+  },
+  {
+    "pic": 3,
+    "hostId": null,
+    "barcodes": [],
+    "location": "1234.5678.0000.B02",
+    "destination": null,
+    "lifeCycle": {
+      "registeredAt": null,
+      "closedAt": null,
+      "status": "open"
+    },
+    "barcodeErr": false,
+    "events": [
+      {
+        "ts": "2025-07-19T11:45:11.456000",
+        "type": "Type2027756",
+        "raw": "|S|3|2027756|3|460|HOST123|1234.5678.0000.B02|DEST123|"
+      }
+    ]
+  },
+  {
+    "pic": 6,
+    "hostId": null,
+    "barcodes": [],
+    "location": null,
+    "destination": null,
+    "lifeCycle": {
+      "registeredAt": null,
+      "closedAt": null,
+      "status": "open"
+    },
+    "barcodeErr": false,
+    "events": [
+      {
+        "ts": "2025-07-19T11:45:12.789000",
+        "type": "Type2027756",
+        "raw": "|S|6|2027756|6|460|"
+      }
+    ]
+  },
+  {
+    "pic": 7,
+    "hostId": null,
+    "barcodes": [],
+    "location": null,
+    "destination": null,
+    "lifeCycle": {
+      "registeredAt": null,
+      "closedAt": null,
+      "status": "open"
+    },
+    "barcodeErr": false,
+    "events": [
+      {
+        "ts": "2025-07-19T11:45:13.789000",
+        "type": "Type2027756",
+        "raw": "|S|7|2027756|7|460|"
+      }
+    ]
+  }
+]
